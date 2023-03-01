@@ -62,24 +62,20 @@ def rango_hint(m) -> str:
     return "".join(m.letter_list)
 
 
-@mod.capture(rule="<user.letters> | <user.letters> (and <user.letters>)+")
-def rango_hints(m) -> list:
-    return m.letters_list
+@mod.capture(rule="<user.letter>")
+def rango_hint_double(m) -> str:
+    return m.letter + m.letter
 
 
-@mod.capture(rule="<user.rango_hints>")
-def rango_target(m) -> Union[str, list[str]]:
-    if len(m.rango_hints) == 1:
-        return m.rango_hints[0]
-    else:
-        return m.rango_hints
+@mod.capture(rule="<user.rango_hint> (and <user.rango_hint>)*")
+def rango_target(m) -> list[str]:
+    return m.rango_hint_list
 
 
-RANGO_COMMAND_TIMEOUT_SECONDS = 3.0
 MINIMUM_SLEEP_TIME_SECONDS = 0.0005
 
 
-def read_json_response_with_timeout() -> Any:
+def read_json_response_with_timeout(timeout_seconds) -> Any:
     """Repeatedly tries to read a json object from the clipboard, waiting
     until the message type is "response"
 
@@ -89,7 +85,7 @@ def read_json_response_with_timeout() -> Any:
     Returns:
         Any: The json-decoded contents of the file
     """
-    timeout_time = time.perf_counter() + RANGO_COMMAND_TIMEOUT_SECONDS
+    timeout_time = time.perf_counter() + timeout_seconds
     sleep_time = MINIMUM_SLEEP_TIME_SECONDS
     message = None
     initial_raw_text = clip.text()
@@ -124,32 +120,65 @@ def read_json_response_with_timeout() -> Any:
     return message
 
 
-def send_request_and_wait_for_response(action: dict):
+def send_request_and_wait_for_response(action: dict, timeout_seconds: float = 3.0):
     message = {"version": 1, "type": "request", "action": action}
     json_message = json.dumps(message)
-    response = None
     with clip.revert():
         clip.set_text(json_message)
-        if app.platform == "mac":
-            actions.key("ctrl-shift-3")
-        else:
-            actions.key("ctrl-shift-insert")
-        response = read_json_response_with_timeout()
+        actions.user.rango_type_hotkey()
+        response = read_json_response_with_timeout(timeout_seconds)
 
-    if response["action"]["type"] == "copyToClipboard":
-        clip.set_text(response["action"]["textToCopy"])
+    response_actions = response.get("actions")
 
-    if response["action"]["type"] == "noHintFound":
-        actions.insert(action["target"])
+    if response_actions == None:
+        actions.app.notify(
+            "Rango-talon is ahead of the Rango extension. Restart the browser to update the Rango extension"
+        )
+        return
+
+    for response_action in response_actions:
+        name = response_action["name"]
+
+        if name == "copyToClipboard":
+            actions.clip.set_text(response_action["textToCopy"])
+
+        if name == "typeTargetCharacters":
+            actions.insert(action["target"][0])
+
+        if name == "focusPage":
+            try:
+                actions.browser.focus_page()
+            except NotImplementedError:
+                actions.browser.focus_address()
+                actions.key("esc:3")
+
+        if name == "key":
+            actions.key(response_action["key"])
+
+        if name == "editDelete":
+            actions.edit.delete()
+
+        if name == "sleep":
+            if "ms" in response_action:
+                actions.sleep(f"{response_action['ms']}ms")
+            else:
+                actions.sleep("150ms")
 
 
 @mod.action_class
 class Actions:
-    def rango_command_with_target(actionType: str, target: Union[str, list[str]]):
+    def rango_type_hotkey():
+        """Presses the rango hotkey to read the command from the clipboard"""
+
+    def rango_command_with_target(
+        actionType: str,
+        target: Union[str, list[str]],
+        arg: Union[str, float, None] = None,
+    ):
         """Executes a Rango command"""
 
     def rango_command_without_target(
-        actionType: str, arg: Union[str, int, None] = None
+        actionType: str, arg: Union[str, float, None] = None
     ):
         """Executes a Rango command without a target"""
 
@@ -162,14 +191,24 @@ class Actions:
 
 @ctx.action_class("user")
 class UserActions:
-    def rango_command_with_target(actionType: str, target: Union[str, list[str]]):
+    def rango_type_hotkey():
+        actions.key("ctrl-shift-insert")
+
+    def rango_command_with_target(
+        actionType: str,
+        target: Union[str, list[str]],
+        arg: Union[str, float, None] = None,
+    ):
+        if isinstance(target, str):
+            target = [target]
         action = {"type": actionType, "target": target}
+        if arg:
+            action["arg"] = arg
         send_request_and_wait_for_response(action)
 
     def rango_command_without_target(
-        actionType: str, arg: Union[str, int, None] = None
+        actionType: str, arg: Union[str, float, None] = None
     ):
-
         action = {"type": actionType}
         if arg:
             action["arg"] = arg
