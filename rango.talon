@@ -96,9 +96,9 @@ upper <user.rango_target>:
 tiny up <user.rango_target>:
   user.rango_command_with_target("scrollUpAtElement", rango_target, 0.2)
 
-downer <user.rango_target>:
+#downer <user.rango_target>:
   user.rango_command_with_target("scrollDownAtElement", rango_target)
-tiny down <user.rango_target>:
+#tiny down <user.rango_target>:
   user.rango_command_with_target("scrollDownAtElement", rango_target, 0.2)
 
 scroll left <user.rango_target>:
@@ -194,7 +194,8 @@ custom hints reset: user.rango_command_without_target("resetCustomSelectors")
 
 # Show and hide hints
 hints refresh: user.rango_command_without_target("refreshHints")
-hints toggle: user.rango_command_without_target("toggleHints")
+hints (toggle | tog): user.rango_command_without_target("toggleHints")
+# PARROT TO DO: Try replacing this with noise!
 hints on [{user.rango_hints_toggle_levels}]: 
   user.rango_command_without_target("enableHints", rango_hints_toggle_levels or "global")
 hints off [{user.rango_hints_toggle_levels}]: 
