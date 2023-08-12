@@ -11,9 +11,12 @@ tag: browser
 
 mod.tag(
     "rango_direct_clicking",
-    desc="Commands for direct clicking with the extension rango",
+    desc="Tag for enabling direct clicking in Rango",
 )
-ctx.tags = ["user.rango_direct_clicking"]
+mod.tag(
+    "rango_exclude_singles_tag",
+    desc="Tag for enabling using only double letter hints in Rango",
+)
 
 rango_start_with_direct_clicking = mod.setting(
     "rango_start_with_direct_clicking",
@@ -21,16 +24,38 @@ rango_start_with_direct_clicking = mod.setting(
     default=True,
     desc="Rango direct clicking mode setting",
 )
+rango_exclude_singles = mod.setting(
+    "rango_exclude_singles",
+    type=bool,
+    default=False,
+    desc="Setting for excluding single letter hints in Rango",
+)
 
 
 def update_clicking_mode(setting_value):
+    tags = set(ctx.tags)
+
     if setting_value == 1:
-        ctx.tags = ["user.rango_direct_clicking"]
+        tags.add("user.rango_direct_clicking")
     else:
-        ctx.tags = []
+        tags.discard("user.rango_direct_clicking")
+
+    ctx.tags = tags
+
+
+def update_exclude_singles(setting_value):
+    tags = set(ctx.tags)
+
+    if setting_value == 1:
+        tags.add("user.rango_exclude_singles_tag")
+    else:
+        tags.discard("user.rango_exclude_singles_tag")
+
+    ctx.tags = tags
 
 
 settings.register("user.rango_start_with_direct_clicking", update_clicking_mode)
+settings.register("user.rango_exclude_singles", update_exclude_singles)
 
 mod.list("rango_hints_toggle_levels", desc="list of Rango hints toggle levels")
 mod.list(
@@ -77,6 +102,16 @@ def rango_target(m) -> list[str]:
 MINIMUM_SLEEP_TIME_SECONDS = 0.0005
 
 
+# This doesn't wait for the extension to respond to avoid creating an infinite
+# loop if the extension is not responsive
+def send_request_timed_out():
+    message = {"version": 1, "type": "request", "action": {"type": "requestTimedOut"}}
+    json_message = json.dumps(message)
+    clip.set_text(json_message)
+    actions.user.rango_type_hotkey()
+    actions.sleep("200ms")
+
+
 def read_json_response_with_timeout(timeout_seconds) -> Any:
     """Repeatedly tries to read a json object from the clipboard, waiting
     until the message type is "response"
@@ -113,6 +148,7 @@ def read_json_response_with_timeout(timeout_seconds) -> Any:
         time_left = timeout_time - time.perf_counter()
 
         if time_left < 0:
+            send_request_timed_out()
             raise Exception("Timed out waiting for response")
 
         # NB: We use minimum sleep time here to ensure that we don't spin with
@@ -138,8 +174,19 @@ def send_request_and_wait_for_response(action: dict, timeout_seconds: float = 3.
         )
         return
 
+    result = None
+
     for response_action in response_actions:
         name = response_action["name"]
+
+        if name == "focusPageAndResend":
+            try:
+                actions.browser.focus_page()
+            except NotImplementedError:
+                actions.browser.focus_address()
+                actions.key("esc:3")
+
+            send_request_and_wait_for_response(action, timeout_seconds)
 
         if name == "copyToClipboard":
             actions.clip.set_text(response_action["textToCopy"])
@@ -166,6 +213,11 @@ def send_request_and_wait_for_response(action: dict, timeout_seconds: float = 3.
             else:
                 actions.sleep("200ms")
 
+        if name == "responseValue":
+            result = response_action["value"]
+
+    return result
+
 
 @mod.action_class
 class Actions:
@@ -183,6 +235,20 @@ class Actions:
         actionType: str, arg: Union[str, float, None] = None
     ):
         """Executes a Rango command without a target"""
+
+    def rango_toggle_hints():
+        """It toggles the Rango hints globally on or off"""
+
+    def rango_try_to_focus_and_check_is_editable(target: Union[str, list[str]]):
+        """Tries to focus an element marked with a hint (clicking if it's not a link) and returns true if the active element is editable"""
+
+    def rango_insert_text_to_input(
+        text: str, target: Union[str, list[str]], pressEnter: bool
+    ):
+        """Inserts a given text to an input marked with the target hint"""
+
+    def rango_clear_input(target: Union[str, list[str]]):
+        """Removes the contents of an input"""
 
     def rango_enable_direct_clicking():
         """Enables rango direct mode so that the user doesn't have to say 'click' before the hint letters"""
@@ -206,7 +272,7 @@ class UserActions:
         action = {"type": actionType, "target": target}
         if arg:
             action["arg"] = arg
-        send_request_and_wait_for_response(action)
+        return send_request_and_wait_for_response(action)
 
     def rango_command_without_target(
         actionType: str, arg: Union[str, float, None] = None
@@ -214,7 +280,30 @@ class UserActions:
         action = {"type": actionType}
         if arg:
             action["arg"] = arg
-        send_request_and_wait_for_response(action)
+        return send_request_and_wait_for_response(action)
+
+    def rango_try_to_focus_and_check_is_editable(target: Union[str, list[str]]):
+        return actions.user.rango_command_with_target(
+            "tryToFocusElementAndCheckIsEditable", target
+        )
+
+    def rango_insert_text_to_input(
+        text: str, target: Union[str, list[str]], pressEnter: bool
+    ):
+        if actions.user.rango_try_to_focus_and_check_is_editable(target):
+            actions.edit.select_all()
+            actions.edit.delete()
+            actions.user.paste(text)
+            if pressEnter:
+                # Here we insert a wait in case that, for example, some results
+                # list needs to be populated (e.g. react.dev)
+                actions.sleep("400ms")
+                actions.key("enter")
+
+    def rango_clear_input(target: Union[str, list[str]]):
+        if actions.user.rango_try_to_focus_and_check_is_editable(target):
+            actions.edit.select_all()
+            actions.edit.delete()
 
     # Necessary for talon_hud
     def rango_toggle_hints():
