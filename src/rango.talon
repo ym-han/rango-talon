@@ -35,10 +35,10 @@ page next: user.rango_command_without_target("navigateToNextPage")
 page last: user.rango_command_without_target("navigateToPreviousPage")
 
 # Move current tab to a new window
-tab split: user.rango_command_without_target("moveCurrentTabToNewWindow")
+taber split: user.rango_command_without_target("moveCurrentTabToNewWindow")
 
 # Focus previous tab
-tab back: user.rango_command_without_target("focusPreviousTab")
+taber back: user.rango_command_without_target("focusPreviousTab")
 
 # Focus or create tab from your `talonhub/community` websites.csv
 visit {user.website}: user.rango_command_without_target("focusOrCreateTabByUrl", website)
@@ -62,7 +62,7 @@ tab close next [<number_small>]:
   user.rango_command_without_target("closeNextTabsInWindow", number_small or 1)
 
 # Clone tab
-tab clone: user.rango_command_without_target("cloneCurrentTab")
+taber clone: user.rango_command_without_target("cloneCurrentTab")
 
 # Hover
 hover <user.rango_target>:
@@ -79,7 +79,7 @@ upper <number>: user.rango_command_without_target("scrollUpPage", number)
 upper all: user.rango_command_without_target("scrollUpPage", 9999)
 tiny up: user.rango_command_without_target("scrollUpPage", 0.2)
 
-downer: user.rango_command_without_target("scrollDownPage")
+#downer: user.rango_command_without_target("scrollDownPage")
 downer <number>: user.rango_command_without_target("scrollDownPage", number)
 downer all: user.rango_command_without_target("scrollDownPage", 9999)
 tiny down: user.rango_command_without_target("scrollDownPage", 0.2)
